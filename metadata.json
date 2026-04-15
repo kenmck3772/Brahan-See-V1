@@ -1,0 +1,8 @@
+{
+  "name": "Copy of WellTegra - Brahan See",
+  "description": "A high-contrast cyber-forensic diagnostic engine for petrophysical wellbore analysis, identifying datum shifts, casing trauma, and annulus leaks.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
