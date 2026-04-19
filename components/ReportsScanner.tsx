@@ -202,10 +202,44 @@ const ReportsScanner: React.FC = () => {
 
           <div className="flex-1 bg-slate-950/90 border border-emerald-900/30 rounded-xl p-4 flex flex-col space-y-4 shadow-2xl relative overflow-hidden">
              {isScanning && (
-               <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/80 backdrop-blur-sm">
-                  <div className="text-[10px] font-black text-orange-400 mb-4 tracking-[0.5em] animate-pulse text-center px-4">SCANNING_TALLY_ARRAY</div>
-                  <div className="w-48 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-orange-500/20">
-                    <div className="h-full bg-orange-500 shadow-[0_0_10px_#f97316]" style={{ width: `${scanProgress}%` }}></div>
+               <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-500">
+                  <div className="relative group">
+                    {/* Pulsing ring around scan icon */}
+                    <div className="absolute -inset-4 rounded-full bg-orange-500/10 animate-ping duration-1000"></div>
+                    <div className="absolute -inset-2 rounded-full bg-orange-500/5 animate-pulse duration-700"></div>
+                    <Loader2 size={32} className="text-orange-500 animate-spin mb-6 relative z-10" />
+                  </div>
+
+                  <div className="flex flex-col items-center space-y-4 w-full max-w-[240px]">
+                    <div className="flex justify-between items-end w-full px-1">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-orange-400 tracking-[0.3em] uppercase mb-0.5">Audit_In_Progress</span>
+                        <span className="text-[8px] font-mono text-orange-900 uppercase">
+                          {scanProgress < 20 ? 'Initializing Kernels...' : 
+                           scanProgress < 40 ? 'Parsing Tally Array...' : 
+                           scanProgress < 60 ? 'Reconciling Datums...' : 
+                           scanProgress < 80 ? 'Calculating Discrepancy...' : 
+                           'Finalizing Metadata...'}
+                        </span>
+                      </div>
+                      <span className="text-lg font-black text-white font-terminal leading-none">{scanProgress}%</span>
+                    </div>
+
+                    <div className="w-full h-1.5 bg-slate-800/50 rounded-full overflow-hidden border border-orange-500/20 shadow-inner">
+                      <div 
+                        className="h-full bg-gradient-to-r from-orange-600 to-orange-400 shadow-[0_0_15px_#f97316] transition-all duration-300 ease-out relative" 
+                        style={{ width: `${scanProgress}%` }}
+                      >
+                        {/* Shimmer effect */}
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 to-transparent w-full animate-shimmer scale-x-150"></div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-1 w-full opacity-40">
+                      {[0, 1, 2, 3].map(i => (
+                        <div key={i} className={`h-1 rounded-sm ${scanProgress > (i + 1) * 25 ? 'bg-orange-500' : 'bg-slate-800'}`}></div>
+                      ))}
+                    </div>
                   </div>
                </div>
              )}
@@ -230,13 +264,59 @@ const ReportsScanner: React.FC = () => {
              </div>
 
              {isValidationComplete && (
-               <div className={`flex items-center space-x-3 p-3 rounded border animate-in slide-in-from-left-2 ${discordance > 0.05 ? 'bg-red-500/5 border-red-500/30 text-red-500' : 'bg-emerald-500/5 border-emerald-500/30 text-emerald-500'}`}>
-                 {discordance > 0.05 ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
-                 <div className="flex flex-col">
-                   <span className="text-[9px] font-black uppercase tracking-widest">{discordance > 0.05 ? 'Discordance_Detected' : 'Datum_Match_Verified'}</span>
-                   <span className="text-[8px] font-mono opacity-80">DELTA: {discordance.toFixed(3)}m</span>
+               <>
+                 <div className={`flex items-center space-x-3 p-3 rounded border animate-in slide-in-from-left-2 ${discordance > 0.05 ? 'bg-red-500/5 border-red-500/30 text-red-500' : 'bg-emerald-500/5 border-emerald-500/30 text-emerald-500'}`}>
+                   {discordance > 0.05 ? <AlertTriangle size={16} /> : <CheckCircle2 size={16} />}
+                   <div className="flex flex-col">
+                     <span className="text-[9px] font-black uppercase tracking-widest">{discordance > 0.05 ? 'Discordance_Detected' : 'Datum_Match_Verified'}</span>
+                     <span className="text-[8px] font-mono opacity-80">DELTA: {discordance.toFixed(3)}m</span>
+                   </div>
                  </div>
-               </div>
+
+                 {/* Audit Progress & Outcome Section */}
+                 <div className="bg-slate-900 border border-emerald-900/40 rounded-lg p-3 space-y-3 animate-in fade-in slide-in-from-top-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Audit_Outcome</span>
+                      <div className={`px-2 py-0.5 rounded text-[8px] font-black tracking-widest ${discordance > 0.05 ? 'bg-red-500 text-slate-950 animate-pulse' : 'bg-emerald-500 text-slate-950'}`}>
+                        {discordance > 0.05 ? 'DISCREPANCY' : 'MATCH'}
+                      </div>
+                    </div>
+
+                    {/* Horizontal Joint Progress Bar */}
+                    <div className="space-y-1.5">
+                      <div className="flex justify-between items-center text-[7px] text-emerald-900 uppercase font-bold">
+                        <span>Forensic_Joint_Audit</span>
+                        <span>{tally.length} Components Scanned</span>
+                      </div>
+                      <div className="h-4 w-full bg-slate-950 rounded flex overflow-hidden border border-emerald-900/20">
+                        {tally.map((item) => (
+                          <div 
+                            key={item.id}
+                            onMouseEnter={() => setHoveredJoint(item.id)}
+                            onMouseLeave={() => setHoveredJoint(null)}
+                            className={`flex-1 h-full cursor-pointer transition-all duration-200 border-r border-slate-950/50 last:border-r-0 ${
+                              hoveredJoint === item.id 
+                                ? 'bg-white scale-y-125 z-10' 
+                                : item.status === 'DISCREPANT' 
+                                  ? 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.5)]' 
+                                  : 'bg-emerald-500/30 hover:bg-emerald-500/60'
+                            }`}
+                            title={`Joint ${item.id}: ${item.status}`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    {discordance > 0.05 && (
+                      <div className="p-2.5 bg-red-500/5 border border-red-500/30 rounded flex items-center space-x-3">
+                        <ShieldAlert size={14} className="text-red-500 flex-shrink-0 animate-pulse" />
+                        <span className="text-[8px] text-red-400 uppercase font-black leading-tight italic">
+                          Structural sync failure detected. Tally summation deviates from operator reporting by {discordance.toFixed(3)}m.
+                        </span>
+                      </div>
+                    )}
+                 </div>
+               </>
              )}
              
              <div className="flex-1 bg-slate-900/40 rounded border border-emerald-900/10 p-3 flex flex-col justify-end">

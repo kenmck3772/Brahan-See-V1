@@ -219,9 +219,19 @@ export const useFileSystem = () => {
   }, [currentDir, items]);
 
   const cat = useCallback((name: string) => {
-    const childId = currentDir.children?.find(id => items[id].name === name && items[id].type === 'file');
-    if (!childId) return `File not found: ${name}`;
-    return items[childId].content || '';
+    const childId = currentDir.children?.find(id => items[id].name === name);
+    if (!childId) return `ERROR: Artifact not found: ${name}`;
+    
+    const item = items[childId];
+    if (item.type === 'directory') return `ERROR: Cannot read directory node as telemetry: ${name}/`;
+    
+    // Simulate non-text (binary) check
+    const isBinary = name.endsWith('.bin') || name.endsWith('.exe') || name.endsWith('.dat');
+    if (isBinary) {
+      return `[SYSTEM_VETO] File type is classified as NON-TEXT telemetry. Access denied via terminal protocol. Use specialist scavenging tools.`;
+    }
+
+    return item.content || '(Artifact is empty)';
   }, [currentDir, items]);
 
   const write = useCallback((name: string, content: string) => {

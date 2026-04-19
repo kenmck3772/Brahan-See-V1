@@ -6,7 +6,7 @@ import {
   Scan, Maximize2, Minimize2, Navigation, 
   Target, Info, AlertCircle, Crosshair,
   Search, Trash2, Clock, MapPin, Activity,
-  ShieldAlert, ChevronRight, Zap, Loader2, Download,
+  ShieldAlert, ChevronRight, Zap, Loader2, Download, FileText,
   Thermometer, Flame, Droplets, Gauge,
   CircleDot, Layers, BoxSelect, Cpu,
   Compass, Ruler, MinusSquare, Percent,
@@ -106,11 +106,15 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
   const [hoverPulseScale, setHoverPulseScale] = useState(1);
   const [uiRevision, setUiRevision] = useState<string>('initial');
   const [isGlitching, setIsGlitching] = useState(false);
+  const [selectionPulseScale, setSelectionPulseScale] = useState(1);
   const [stressPulseIntensity, setStressPulseIntensity] = useState(2.8);
   const [stressThreshold, setStressThreshold] = useState(90);
   const [stressWireframeOpacity, setStressWireframeOpacity] = useState(30);
   const [stressSurfaceOpacity, setStressSurfaceOpacity] = useState(80);
   const [anomalyIntensity, setAnomalyIntensity] = useState(1.5);
+
+  const [scanDistortion, setScanDistortion] = useState(0);
+  const [scanGlowIntensity, setScanGlowIntensity] = useState(0);
 
   const [layerOpacities, setLayerOpacities] = useState<Record<TraumaLayer, number>>(
     Object.values(TraumaLayer).reduce((acc, layer) => ({ ...acc, [layer]: layer === TraumaLayer.STRESS ? 80 : 90 }), {} as Record<TraumaLayer, number>)
@@ -120,6 +124,8 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
   const fingerIds = useMemo(() => Array.from(new Set(MOCK_TRAUMA_DATA.map(d => d.fingerId))).sort((a, b) => a - b), []);
 
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [dragMode, setDragMode] = useState<'orbit' | 'pan'>('orbit');
+  const [highlightedFingerId, setHighlightedFingerId] = useState<number | null>(null);
 
   // Mount-time forensic data integrity check
   useEffect(() => {
@@ -172,6 +178,27 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
     frameId = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(frameId);
   }, [hoveredDepth]);
+
+  useEffect(() => {
+    if (highlightedDepth === null) {
+      setSelectionPulseScale(1);
+      return;
+    }
+
+    let frameId: number;
+    const startTime = performance.now();
+    
+    const animate = (time: number) => {
+      const elapsed = time - startTime;
+      // Slower breathing: oscillate between 1.0 and 1.15 every 2 seconds
+      const scale = 1 + 0.075 * (1 + Math.sin(elapsed / 300));
+      setSelectionPulseScale(scale);
+      frameId = requestAnimationFrame(animate);
+    };
+
+    frameId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frameId);
+  }, [highlightedDepth]);
 
   const [blackBoxLogs, setBlackBoxLogs] = useState<TraumaEvent[]>(() => {
     try {
@@ -272,13 +299,19 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
     setTimeout(() => setIsGlitching(false), 300);
   };
 
-  const triggerFlashAtDepth = useCallback((depth: number, log?: TraumaEvent) => {
+  const triggerFlashAtDepth = useCallback((depth: number, log?: TraumaEvent, fingerId?: number) => {
     // Reset previous targeting state before new one
     setIsTargeting(false); 
     setFlashDepth(null);
     setScanSweepDepth(null);
 
     setHighlightedDepth(depth);
+    if (fingerId !== undefined) {
+      setHighlightedFingerId(fingerId);
+    } else {
+      setHighlightedFingerId(null);
+    }
+
     if (log) {
       setSelectedLog(log);
     } else {
@@ -351,23 +384,42 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
     console.log('[TraumaNode:Scan] Initiating automated forensic sweep...');
     setIsScanning(true);
     setLoadError(null);
+    setIsGlitching(true);
     
     // Animate scan sweep from top to bottom
     const startDepth = allDepths[0];
     const endDepth = allDepths[allDepths.length - 1];
-    const duration = 1200;
+    const duration = 2400; // Slower, more deliberate scan
     const startTime = performance.now();
 
     const animateSweep = (time: number) => {
       const elapsed = time - startTime;
       const progress = Math.min(elapsed / duration, 1);
+      
+      // Dynamic Sweep with deceleration
       setScanSweepDepth(startDepth + (endDepth - startDepth) * progress);
+      
+      // Scanning effects
+      const distortion = Math.sin(time / 40) * 8 * (1 - progress);
+      setScanDistortion(distortion);
+      setScanGlowIntensity(Math.abs(Math.sin(time / 100)) * 0.5 + 0.5);
+      
+      // Random glitch spikes
+      if (Math.random() > (0.95 + progress * 0.04)) {
+        setIsGlitching(true);
+        setTimeout(() => setIsGlitching(false), 50);
+      }
       
       if (progress < 1) {
         requestAnimationFrame(animateSweep);
       } else {
         // Keep it at the bottom for a moment then clear
-        setTimeout(() => setScanSweepDepth(null), 500);
+        setTimeout(() => {
+          setScanSweepDepth(null);
+          setScanDistortion(0);
+          setScanGlowIntensity(0);
+          setIsGlitching(false);
+        }, 800);
       }
     };
     requestAnimationFrame(animateSweep);
@@ -667,15 +719,25 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
             let val = entry ? (entry[layerToKey[layer]] as number) : 0;
             const isFlashed = flashDepth === depth;
             const isNearSweep = scanSweepDepth !== null && Math.abs(depth - scanSweepDepth) < 0.2;
+            const isHighlighted = highlightedDepth !== null && Math.abs(depth - highlightedDepth) < 0.1;
+            const isHovered = hoveredDepth !== null && Math.abs(depth - hoveredDepth) < 0.1;
             
-            const r = baseRadius + (isFlashed ? (val + 30) * pulseScale : val);
+            let r = baseRadius + (isFlashed ? (val + 30) * pulseScale : (isNearSweep ? val + scanDistortion : val));
             
+            if (isHighlighted && !isFlashed) {
+              r += 5 * selectionPulseScale;
+            } else if (isHovered && !isHighlighted && !isFlashed) {
+              r += 3 * hoverPulseScale;
+            }
+
             xRow.push(r * Math.cos(theta));
             yRow.push(r * Math.sin(theta));
             zRow.push(depth);
             
             if (isFlashed) cRow.push(100 * anomalyIntensity); 
-            else if (isNearSweep) cRow.push(80 * anomalyIntensity); 
+            else if (isNearSweep) cRow.push(80 * anomalyIntensity * scanGlowIntensity); 
+            else if (isHighlighted) cRow.push(70 * selectionPulseScale);
+            else if (isHovered) cRow.push(50 * hoverPulseScale);
             else cRow.push(val);
           });
 
@@ -701,11 +763,11 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
           cmax: 100,
           showscale: false,
           lighting: { 
-            ambient: 0.35,
-            diffuse: 0.45,
-            specular: 2.8,
-            roughness: 0.04,
-            fresnel: 1.2
+            ambient: 0.8,
+            diffuse: 0.9,
+            specular: 3.5,
+            roughness: 0.05,
+            fresnel: 2.5
           },
           lightposition: { x: 1000, y: 1000, z: 1300 },
           opacity: layer === TraumaLayer.STRESS ? stressSurfaceOpacity / 100 : layerOpacities[layer] / 100,
@@ -829,6 +891,58 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
           textfont: { family: 'Fira Code', size: 10, color: '#ffffff' },
           name: 'POI_LABEL'
         });
+
+        // 3D Selection Marker (Orb) at specific Finger ID if available
+        if (highlightedFingerId !== null) {
+          const fIdx = fingerIds.indexOf(highlightedFingerId);
+          if (fIdx !== -1) {
+            const theta = (fIdx / fingerIds.length) * 2 * Math.PI;
+            const entry = MOCK_TRAUMA_DATA.find(d => d.depth === highlightedDepth && d.fingerId === highlightedFingerId);
+            const val = entry ? (entry[layerToKey[Array.from(activeLayers)[0] as TraumaLayer]] as number) : 0;
+            const r = baseRadius + val + 5 * selectionPulseScale;
+            const x = r * Math.cos(theta);
+            const y = r * Math.sin(theta);
+
+            // Pulsating Glow Orb
+            traces.push({
+              type: 'scatter3d',
+              mode: 'markers',
+              x: [x], y: [y], z: [highlightedDepth],
+              marker: {
+                size: 15 * selectionPulseScale,
+                color: ringColor,
+                opacity: 0.6,
+                line: { color: '#ffffff', width: 2 }
+              },
+              name: 'SELECTION_ORB',
+              hoverinfo: 'none'
+            });
+
+            // Holographic Ring around the point
+            const ringPoints = 32;
+            const rx: number[] = [];
+            const ry: number[] = [];
+            const rz: number[] = [];
+            const ringSize = 15 * selectionPulseScale;
+            
+            for(let i=0; i<=ringPoints; i++) {
+              const phi = (i / ringPoints) * 2 * Math.PI;
+              // Creating a vertical-ish ring around the horizontal point for 3D effect
+              rx.push(x + ringSize * Math.cos(phi) * 0.5);
+              ry.push(y);
+              rz.push(highlightedDepth + ringSize * Math.sin(phi) * 0.5);
+            }
+
+            traces.push({
+              type: 'scatter3d',
+              mode: 'lines',
+              x: rx, y: ry, z: rz,
+              line: { color: ringColor, width: 3, opacity: 0.8 },
+              name: 'NODE_GLOW_RING',
+              hoverinfo: 'none'
+            });
+          }
+        }
       }
 
       // Visual Scanning Ring for runForensicScan
@@ -945,7 +1059,7 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
             backgroundcolor: '#010409', gridcolor: '#064e3b', zerolinecolor: '#10b981',
             tickfont: { color: '#10b981', size: 10, family: 'Fira Code' }
           },
-          dragmode: 'orbit',
+          dragmode: dragMode,
           aspectmode: 'manual',
           aspectratio: { x: 1, y: 1, z: 2.2 },
           camera: uiRevision === 'initial' ? {
@@ -973,7 +1087,8 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
       Plotly.react(plotContainerRef.current, traces, layout, { 
         responsive: true, 
         displayModeBar: false,
-        displaylogo: false
+        displaylogo: false,
+        scrollZoom: true
       }).then(() => {
         const plotEl = plotContainerRef.current as any;
         if (plotEl) {
@@ -982,8 +1097,17 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
             if (data && data.points && data.points.length > 0) {
               const point = data.points[0];
               const depth = isCrossSectionView ? highlightedDepth : point.z;
+              
+              let fingerId = undefined;
+              if (!isCrossSectionView && point.x !== undefined && point.y !== undefined) {
+                const theta = Math.atan2(point.y, point.x);
+                const normalizedTheta = theta < 0 ? theta + 2 * Math.PI : theta;
+                const fingerIdx = Math.round((normalizedTheta / (2 * Math.PI)) * fingerIds.length) % fingerIds.length;
+                fingerId = fingerIds[fingerIdx];
+              }
+
               if (depth !== undefined && depth !== null) {
-                 triggerFlashAtDepth(depth);
+                 triggerFlashAtDepth(depth, undefined, fingerId);
               }
             }
           });
@@ -1025,7 +1149,7 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
         }
       }
     };
-  }, [allDepths, fingerIds, activeLayers, highlightedDepth, flashDepth, scanSweepDepth, pulseScale, hoverPulseScale, uiRevision, isCrossSectionView, layerOpacities, triggerFlashAtDepth, isFocused, hoveredDepth, selectedLog]);
+  }, [allDepths, fingerIds, activeLayers, highlightedDepth, flashDepth, scanSweepDepth, scanDistortion, scanGlowIntensity, pulseScale, hoverPulseScale, uiRevision, isCrossSectionView, layerOpacities, triggerFlashAtDepth, isFocused, hoveredDepth, selectedLog]);
 
   // Fix: The `handleLogClick` function was referenced before it was defined in the `React.createElement` scope.
   // Ensured it's properly defined within the component scope.
@@ -1086,6 +1210,10 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
                 React.createElement("div", { className: "flex justify-between items-center space-x-16" },
                   React.createElement("span", { className: "text-[9px] text-emerald-900 font-black uppercase" }, "Depth_Artifact"),
                   React.createElement("span", { className: "text-[18px] font-terminal font-black text-emerald-100 text-glow-emerald" }, highlightedDepth.toFixed(3) + "M")
+                ),
+                highlightedFingerId !== null && React.createElement("div", { className: "flex justify-between items-center space-x-16" },
+                  React.createElement("span", { className: "text-[9px] text-emerald-900 font-black uppercase" }, "Finger_ID"),
+                  React.createElement("span", { className: "text-[14px] font-terminal font-black text-[var(--emerald-primary)]" }, highlightedFingerId.toString().padStart(2, '0'))
                 ),
                 React.createElement("div", { className: "grid grid-cols-2 gap-4" },
                   React.createElement("div", { className: "p-3 bg-slate-900/80 rounded border border-emerald-900/30 glass-panel" },
@@ -1180,7 +1308,7 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
         ),
       ),
       React.createElement("div", { className: "flex-1 min-h-0 flex space-x-4 relative" },
-        React.createElement("div", { ref: plotContainerRef, className: `flex-1 bg-slate-950 rounded-2xl border border-emerald-900/40 overflow-hidden relative transition-all duration-500 shadow-inner glass-panel cyber-border ${isGlitching ? 'blur-[6px] brightness-150' : ''}` },
+        React.createElement("div", { ref: plotContainerRef, className: `flex-1 bg-slate-950 rounded-2xl border border-emerald-900/40 overflow-hidden relative transition-all duration-500 shadow-inner glass-panel cyber-border holo-shimmer-effect ${isGlitching ? 'blur-[6px] brightness-150' : ''}` },
            isFocused && React.createElement("div", { className: "absolute top-6 right-6 z-50 flex flex-col space-y-3" },
              React.createElement("button", { 
                onClick: onToggleFocus, 
@@ -1204,6 +1332,15 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
              )
            ),
            !isCrossSectionView && React.createElement("div", { className: "absolute bottom-6 right-6 z-50 flex flex-col space-y-2" },
+             React.createElement("div", { className: "flex space-x-2" },
+               React.createElement("button", { 
+                 onClick: () => setDragMode(dragMode === 'orbit' ? 'pan' : 'orbit'), 
+                 className: `p-2 border rounded-lg transition-all shadow-lg backdrop-blur-md glass-panel cyber-border ${dragMode === 'pan' ? 'bg-orange-500 text-slate-950 border-orange-400' : 'bg-slate-900/80 border-emerald-500/30 text-emerald-400 hover:text-white'}`,
+                 title: dragMode === 'orbit' ? "Switch to Pan Mode" : "Switch to Orbit Mode"
+               },
+                 dragMode === 'orbit' ? React.createElement(RotateCw, { size: 18 }) : React.createElement(Navigation, { size: 18 })
+               )
+             ),
              React.createElement("div", { className: "flex space-x-2" },
                React.createElement("button", { onClick: () => adjustCamera('ROTATE_LEFT'), className: "p-2 bg-slate-900/80 border border-emerald-500/30 rounded-lg text-emerald-400 hover:text-white transition-all shadow-lg backdrop-blur-md glass-panel cyber-border", title: "Rotate Left" },
                  React.createElement(RotateCcw, { size: 18 })
@@ -1409,17 +1546,19 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
              React.createElement("span", { className: "text-[9px] font-mono tracking-[0.2em] uppercase text-emerald-900 mr-2" }, "Archive_Nodes: " + blackBoxLogs.length),
              React.createElement("button", { 
                onClick: () => exportLogs('json'), 
-               className: "p-2 text-emerald-900 hover:text-emerald-400 transition-colors bg-black/40 rounded-lg",
+               className: "flex items-center space-x-2 px-3 py-1.5 text-emerald-900 hover:text-emerald-400 transition-all bg-black/40 rounded-lg border border-emerald-900/20 hover:border-emerald-500/40 group",
                title: "Export_JSON"
              },
-               React.createElement(Download, { size: 16 })
+               React.createElement(Download, { size: 14, className: "group-hover:scale-110 transition-transform" }),
+               React.createElement("span", { className: "text-[9px] font-black uppercase tracking-widest" }, "JSON")
              ),
              React.createElement("button", { 
                onClick: () => exportLogs('csv'), 
-               className: "p-2 text-emerald-900 hover:text-amber-400 transition-colors bg-black/40 rounded-lg",
+               className: "flex items-center space-x-2 px-3 py-1.5 text-emerald-900 hover:text-amber-400 transition-all bg-black/40 rounded-lg border border-emerald-900/20 hover:border-amber-500/40 group",
                title: "Export_CSV"
              },
-               React.createElement(Share2, { size: 16 })
+               React.createElement(FileText, { size: 14, className: "group-hover:scale-110 transition-transform" }),
+               React.createElement("span", { className: "text-[9px] font-black uppercase tracking-widest" }, "CSV")
              ),
              React.createElement("button", { onClick: clearLogs, className: "p-2 text-emerald-900 hover:text-red-500 transition-colors bg-black/40 rounded-lg" },
                React.createElement(Trash2, { size: 16 })
@@ -1519,6 +1658,14 @@ const TraumaNode: React.FC<TraumaNodeProps> = ({ isFocused: isFocusedProp, onTog
         .no-scrollbar {
           -ms-overflow-style: none;
           scrollbar-width: none;
+        }
+        @keyframes holo-shimmer {
+          0% { opacity: 0.85; filter: hue-rotate(0deg) brightness(1); }
+          50% { opacity: 1; filter: hue-rotate(15deg) brightness(1.3); }
+          100% { opacity: 0.85; filter: hue-rotate(0deg) brightness(1); }
+        }
+        .holo-shimmer-effect {
+          animation: holo-shimmer 4s ease-in-out infinite;
         }
         @keyframes scanline {
           0% { transform: translateY(-100%); }

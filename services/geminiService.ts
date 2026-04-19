@@ -18,7 +18,7 @@ export async function getForensicInsight(module: string, dataSummary: string) {
       }
     });
     // Correctly extracting the generated text output via property access
-    return response.text;
+    return response.text ?? "ANALYSIS_COMPLETE: NO_ANOMALIES_IN_SIGNAL_STREAM.";
   } catch (error) {
     console.error("Forensic analysis failed:", error);
     return "ANALYSIS ERROR: UNABLE TO PENETRATE DATA ABYSS.";

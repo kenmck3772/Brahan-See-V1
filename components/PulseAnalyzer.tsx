@@ -1,15 +1,14 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Line, ComposedChart, ReferenceArea } from 'recharts';
 import { MOCK_PRESSURE_DATA, MOCK_HISTORICAL_BARRIER_LOGS, MOCK_SCAVENGED_PRESSURE_TESTS } from '../constants';
 import { calculateLinearRegression, diagnoseSawtooth } from '../forensic_logic/math';
-// Added Loader2 to imports from lucide-react
 import { 
   Activity, Zap, ShieldCheck, Target, TrendingUp, Cpu, 
   Scan, History, Search, Download, Database, Info, 
   AlertCircle, Droplet, Beaker, FileText, ChevronRight,
-  Loader2
+  Loader2, Clock, Play, Pause, RefreshCw
 } from 'lucide-react';
-import { BarrierEvent } from '../types';
+import { BarrierEvent, PressureData } from '../types';
 
 const PulseAnalyzer: React.FC = () => {
   const [view, setView] = useState<'LIVE' | 'SCAVENGER'>('LIVE');
@@ -19,14 +18,73 @@ const PulseAnalyzer: React.FC = () => {
   const [showHistoricalEvents, setShowHistoricalEvents] = useState(false);
   const [showLeakThresholds, setShowLeakThresholds] = useState(false);
 
-  const rechargePhaseData = MOCK_PRESSURE_DATA.slice(0, 4);
-  const pressures = rechargePhaseData.map(d => d.pressure);
+  // Real-time Data Feed States
+  const [liveData, setLiveData] = useState<PressureData[]>(MOCK_PRESSURE_DATA);
+  const [updateInterval, setUpdateInterval] = useState(5); // seconds
+  const [timeLeft, setTimeLeft] = useState(5);
+  const [isFeedActive, setIsFeedActive] = useState(true);
+
+  const rechargePhaseData = useMemo(() => {
+    // Take the last 4 points of the current live data for slope analysis
+    return liveData.slice(-4);
+  }, [liveData]);
+
+  const pressures = useMemo(() => rechargePhaseData.map(d => d.pressure), [rechargePhaseData]);
   
   const analysis = useMemo(() => {
     const { slope, rSquared } = calculateLinearRegression(pressures);
     const diagnosis = diagnoseSawtooth(rSquared, slope);
     return { slope, rSquared, ...diagnosis };
   }, [pressures]);
+
+  // Real-time Simulator Effect
+  useEffect(() => {
+    if (!isFeedActive || view !== 'LIVE') return;
+
+    const timer = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          // Trigger data update
+          setLiveData(current => {
+            const lastPoint = current[current.length - 1];
+            const lastPressure = lastPoint.pressure;
+            
+            // Simulation Logic: Sawtooth pattern
+            // If pressure {'>'} 800, bleed down (reset)
+            let nextPressure: number;
+            if (lastPressure >= 850) {
+              nextPressure = 250 + (Math.random() * 20 - 10);
+            } else {
+              // Rise linearly with some noise
+              const gain = 45 + (Math.random() * 10);
+              nextPressure = lastPressure + gain;
+            }
+
+            // Create new timestamp
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+            const newPoint: PressureData = {
+              timestamp: timeStr,
+              pressure: Math.max(0, nextPressure)
+            };
+
+            // Keep only last 8 points for visibility
+            return [...current.slice(1), newPoint];
+          });
+          return updateInterval;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isFeedActive, updateInterval, view]);
+
+  // Sync timeLeft when updateInterval changes
+  useEffect(() => {
+    setTimeLeft(updateInterval);
+  }, [updateInterval]);
 
   const triggerScavenge = () => {
     setIsScavenging(true);
@@ -82,6 +140,44 @@ const PulseAnalyzer: React.FC = () => {
         </div>
 
         <div className="flex items-center space-x-2">
+           {view === 'LIVE' && (
+             <div className="flex items-center bg-slate-900 border border-[var(--emerald-primary)]/20 p-1 rounded-sm mr-2 glass-panel">
+               <div className="flex items-center px-4 py-1.5 space-x-4 border-r border-[var(--emerald-primary)]/10 mr-2">
+                  <div className="flex flex-col">
+                     <span className="text-[7px] text-[var(--emerald-primary)]/40 font-black uppercase tracking-widest leading-none">Feed_Heartbeat</span>
+                     <div className="flex items-center space-x-1 mt-1">
+                        <Clock size={10} className="text-cyan-400" />
+                        <span className="text-[10px] font-mono font-black text-cyan-400">{timeLeft}s</span>
+                     </div>
+                  </div>
+                  <div 
+                    className="w-8 h-8 rounded-full border-2 border-[var(--emerald-primary)]/20 relative flex items-center justify-center cursor-pointer hover:border-[var(--emerald-primary)]/50 transition-all group"
+                    onClick={() => setIsFeedActive(!isFeedActive)}
+                  >
+                     <div 
+                        className="absolute inset-0 rounded-full border-2 border-[var(--emerald-primary)] border-t-transparent animate-spin"
+                        style={{ animationDuration: `${updateInterval}s`, animationPlayState: isFeedActive ? 'running' : 'paused' }}
+                      ></div>
+                      {isFeedActive ? <Pause size={10} className="text-[var(--emerald-primary)]" /> : <Play size={10} className="text-[var(--emerald-primary)] ml-0.5" />}
+                  </div>
+               </div>
+
+               <div className="flex items-center px-3 space-x-2">
+                  <span className="text-[7px] text-[var(--emerald-primary)]/40 font-black uppercase tracking-widest leading-none">Interval</span>
+                  <select 
+                    value={updateInterval} 
+                    onChange={(e) => setUpdateInterval(Number(e.target.value))}
+                    className="bg-transparent text-[10px] font-black text-emerald-100 outline-none cursor-pointer hover:text-[var(--emerald-primary)] transition-colors"
+                  >
+                    <option value={2}>2s</option>
+                    <option value={5}>5s</option>
+                    <option value={10}>10s</option>
+                    <option value={30}>30s</option>
+                  </select>
+               </div>
+             </div>
+           )}
+
            <div className="bg-slate-900 border border-[var(--emerald-primary)]/40 p-1 rounded-sm flex space-x-1 glass-panel">
               <button 
                 onClick={() => setView('LIVE')}
@@ -134,7 +230,7 @@ const PulseAnalyzer: React.FC = () => {
              </div>
 
              <ResponsiveContainer width="100%" height="100%">
-               <ComposedChart data={MOCK_PRESSURE_DATA} margin={{ top: 40, right: 30, left: 0, bottom: 0 }}>
+               <ComposedChart data={liveData} margin={{ top: 40, right: 30, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorPressure" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor={view === 'LIVE' ? analysis.color : '#a855f7'} stopOpacity={0.4}/>
@@ -313,8 +409,11 @@ const PulseAnalyzer: React.FC = () => {
                        <p className="text-[10px] text-slate-300 font-terminal leading-relaxed mb-2 opacity-80">{event.summary}</p>
                        <div className="flex items-center justify-between">
                           <span className="text-[8px] text-purple-900 font-black uppercase tracking-widest">ANNULUS: {event.annulus}</span>
-                          {event.volume && (
-                            <span className="text-[8px] px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded-full font-black">{event.volume} {event.unit}</span>
+                          {(event.volume !== undefined && (event.type === 'TOPUP' || event.type === 'BREACH')) && (
+                            <div className="flex items-center space-x-1 px-2 py-0.5 bg-purple-500/10 text-purple-400 rounded-full border border-purple-500/20">
+                               <span className="text-[8px] font-black">{event.volume}</span>
+                               <span className="text-[7px] font-bold opacity-60 uppercase">{event.unit || 'L'}</span>
+                            </div>
                           )}
                        </div>
                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">

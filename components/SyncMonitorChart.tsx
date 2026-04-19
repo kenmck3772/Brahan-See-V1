@@ -5,7 +5,7 @@ import {
   XAxis, YAxis, Tooltip, Area, Line, ReferenceLine, ReferenceArea, Legend,
   Cell
 } from 'recharts';
-import { Target, Crosshair, AlertOctagon, Info, AlertTriangle } from 'lucide-react';
+import { Target, Crosshair, AlertOctagon, Info, AlertTriangle, Zap, Activity } from 'lucide-react';
 import { SignalMetadata, SyncAnomaly } from './GhostSync';
 
 interface SyncMonitorChartProps {
@@ -15,7 +15,9 @@ interface SyncMonitorChartProps {
   ghostLabel: string;
   validationError: string | null;
   offset: number;
+  bestShift?: number | null;
   anomalies?: SyncAnomaly[];
+  anomalyThreshold: number;
   onToggleSignal: (dataKey: string) => void;
   onAnomalyClick?: (anomaly: SyncAnomaly) => void;
   selectedAnomalyId?: string | null;
@@ -57,7 +59,9 @@ const SyncMonitorChart: React.FC<SyncMonitorChartProps> = ({
   ghostLabel, 
   validationError,
   offset,
+  bestShift,
   anomalies = [],
+  anomalyThreshold,
   onToggleSignal,
   onAnomalyClick,
   selectedAnomalyId
@@ -150,6 +154,17 @@ const SyncMonitorChart: React.FC<SyncMonitorChartProps> = ({
             {anomalies.length} Forensic Anomalies Identified
           </div>
         )}
+        {bestShift !== undefined && bestShift !== null && anomalies.length > 0 && (
+          <div className="flex flex-col space-y-1 mt-2">
+            <div className="flex items-center space-x-2 bg-slate-900/90 border border-emerald-500/30 px-3 py-1 rounded shadow-lg glass-panel cyber-border">
+              <Activity size={10} className="text-emerald-400" />
+              <div className="flex flex-col">
+                <span className="text-[8px] font-black uppercase tracking-widest text-emerald-500/60 leading-none">Correction_Vector</span>
+                <span className="text-[10px] font-mono font-black text-emerald-400">{bestShift > offset ? '+' : ''}{(bestShift - offset).toFixed(2)}m</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="absolute top-4 right-4 z-20 flex flex-col items-end space-y-1">
@@ -213,6 +228,11 @@ const SyncMonitorChart: React.FC<SyncMonitorChartProps> = ({
                   <feMergeNode in="SourceGraphic"/>
                 </feMerge>
               </filter>
+              <linearGradient id="diffHeatmap" x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0%" stopColor="transparent" />
+                <stop offset="5%" stopColor="var(--alert-red)" stopOpacity={0.5} />
+                <stop offset="10%" stopColor="transparent" />
+              </linearGradient>
             </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--emerald-primary)" opacity={0.05} vertical={false} />
             <XAxis 
@@ -231,6 +251,11 @@ const SyncMonitorChart: React.FC<SyncMonitorChartProps> = ({
               tickLine={{stroke: 'var(--emerald-primary)', strokeOpacity: 0.2}} 
               tick={{fill: 'var(--emerald-primary)', opacity: 0.5, fontWeight: 900, fontFamily: 'JetBrains Mono'}}
               label={{ value: 'GAMMA RAY (API)', angle: -90, position: 'insideLeft', fill: 'var(--emerald-primary)', opacity: 0.3, fontSize: 8, fontWeight: 'black', letterSpacing: 2 }}
+            />
+            <YAxis 
+              yAxisId="discrepancy"
+              hide={true}
+              domain={[0, 100]}
             />
             <Tooltip 
               content={<CustomTooltip />}
@@ -252,6 +277,16 @@ const SyncMonitorChart: React.FC<SyncMonitorChartProps> = ({
               fillOpacity={1}
               stroke="none"
             />
+
+            {/* Sync Integrity Heatmap Background */}
+            {viewMode === 'DIFFERENTIAL' && (
+              <ReferenceArea
+                x1={minDepth}
+                x2={maxDepth}
+                fill="url(#ghostFlowGradient)"
+                fillOpacity={0.03}
+              />
+            )}
 
             {Math.abs(offset) > 0.05 && combinedData.length > 0 && (
               <ReferenceArea 
@@ -354,9 +389,39 @@ const SyncMonitorChart: React.FC<SyncMonitorChartProps> = ({
               />
             )}
 
+            {/* Threshold Reference Line */}
             {viewMode === 'DIFFERENTIAL' && (
-              <Area type="monotone" dataKey="diff" stroke="none" fill="var(--alert-red)" fillOpacity={0.1} isAnimationActive={false} />
+              <ReferenceLine 
+                y={anomalyThreshold} 
+                stroke="#ef4444" 
+                strokeDasharray="3 3" 
+                strokeOpacity={0.8}
+                label={{ value: `ALERT_THRESHOLD: ${anomalyThreshold}`, position: 'right', fill: '#ef4444', fontSize: 8, fontWeight: 'black', letterSpacing: 1 }}
+              />
             )}
+
+            {viewMode === 'DIFFERENTIAL' && (
+              <Area 
+                type="monotone" 
+                dataKey="diff" 
+                stroke="none" 
+                fill="#ef4444" 
+                fillOpacity={0.15} 
+                isAnimationActive={false} 
+              />
+            )}
+
+            {/* Discrepancy Heatmap Bar at the bottom */}
+            <Area
+              yAxisId="discrepancy"
+              type="step"
+              dataKey="diff"
+              stroke="none"
+              fill="url(#diffHeatmap)"
+              fillOpacity={0.6}
+              isAnimationActive={false}
+              baseValue={0}
+            />
 
             {signals.find(s => s.id === 'SIG-001')?.visible && (
               <Line 

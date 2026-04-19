@@ -16,6 +16,8 @@ const SovereignTerminal: React.FC = () => {
     { type: 'system', content: 'Connection: SECURE. Welcome, Operator.', timestamp: new Date().toLocaleTimeString() },
   ]);
   const [input, setInput] = useState('');
+  const [commandHistory, setCommandHistory] = useState<string[]>([]);
+  const [historyIndex, setHistoryIndex] = useState(-1);
   const terminalEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -29,11 +31,35 @@ const SovereignTerminal: React.FC = () => {
     scrollToBottom();
   }, [history]);
 
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (commandHistory.length > 0) {
+        const nextIndex = Math.min(historyIndex + 1, commandHistory.length - 1);
+        setHistoryIndex(nextIndex);
+        setInput(commandHistory[commandHistory.length - 1 - nextIndex]);
+      }
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (historyIndex > 0) {
+        const nextIndex = historyIndex - 1;
+        setHistoryIndex(nextIndex);
+        setInput(commandHistory[commandHistory.length - 1 - nextIndex]);
+      } else if (historyIndex === 0) {
+        setHistoryIndex(-1);
+        setInput('');
+      }
+    }
+  };
+
   const handleCommand = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim()) return;
 
     const fullCommand = input.trim();
+    setCommandHistory(prev => [...prev, fullCommand]);
+    setHistoryIndex(-1);
+
     const [cmd, ...args] = fullCommand.split(' ');
     const timestamp = new Date().toLocaleTimeString();
 
@@ -44,29 +70,71 @@ const SovereignTerminal: React.FC = () => {
 
     switch (cmd.toLowerCase()) {
       case 'help':
-        output = 'Available commands: help, clear, pwd, ls, cd [dir], mkdir [dir], touch [file], rm [name], mv [old] [new], cat [file], echo [text] > [file], whoami';
+        output = `
+AVAILABLE FORENSIC COMMANDS:
+---------------------------
+HELP         - Display this manual
+CLEAR        - Purge terminal buffer
+PWD          - Print active forensic path
+LS           - Scavenge current directory contents
+CD [DIR]     - Shift focal directory
+MKDIR [DIR]  - Construct new directory node
+TOUCH [FILE] - Initialize empty data artifact
+RM [NAME]    - Decommission node from registry
+MV [O] [N]   - Reassign node identifier
+CAT [FILE]   - Inspect file telemetry
+ECHO [T] > [F] - Inject string into artifact
+WHOAMI       - Report active operator credentials
+HISTORY      - Review command audit trail
+DATE         - Display system temporal sync
+`;
         break;
       case 'clear':
         setHistory([]);
         setInput('');
         return;
       case 'pwd':
-        output = pwd();
+        output = `ACTIVE_LOCUS: ${pwd()}`;
         break;
       case 'ls':
         const items = ls();
-        output = items.map(item => `${item.type === 'directory' ? '[DIR] ' : '[FILE]'} ${item.name}`).join('\n') || 'Directory is empty';
+        if (items.length === 0) {
+          output = 'Directory is empty (No forensic artifacts detected)';
+        } else {
+          output = items.map(item => {
+            const icon = item.type === 'directory' ? '📁' : '📄';
+            return `${icon} ${item.name.padEnd(20)} | ${item.type.toUpperCase().padEnd(10)} | ${new Date(item.updatedAt).toLocaleDateString()}`;
+          }).join('\n');
+        }
         break;
       case 'cd':
-        error = cd(args[0] || '/');
+        const cdResult = cd(args[0] || '/');
+        if (cdResult) error = cdResult;
+        else setHistory(prev => [...prev, { type: 'system', content: `Focus shifted to: ${args[0] || '/'}`, timestamp }]);
+        break;
+      case 'history':
+        output = commandHistory.map((c, i) => `${(i + 1).toString().padStart(3, '0')} | ${c}`).join('\n');
+        break;
+      case 'date':
+        output = `SYSTEM_TIME: ${new Date().toUTCString()}`;
         break;
       case 'mkdir':
-        if (!args[0]) error = 'Usage: mkdir [directory_name]';
-        else error = mkdir(args[0]);
+        if (!args[0]) {
+          error = 'Usage: mkdir [directory_name]';
+        } else if (/[/\\:]/.test(args[0])) {
+          error = 'Error: Directory name contains invalid characters (/, \\, :)';
+        } else {
+          error = mkdir(args[0]);
+        }
         break;
       case 'touch':
-        if (!args[0]) error = 'Usage: touch [file_name]';
-        else error = touch(args[0]);
+        if (!args[0]) {
+          error = 'Usage: touch [file_name]';
+        } else if (/[/\\:]/.test(args[0])) {
+          error = 'Error: File name contains invalid characters (/, \\, :)';
+        } else {
+          error = touch(args[0]);
+        }
         break;
       case 'rm':
         if (!args[0]) error = 'Usage: rm [name]';
@@ -80,7 +148,7 @@ const SovereignTerminal: React.FC = () => {
         if (!args[0]) error = 'Usage: cat [file_name]';
         else {
           const content = cat(args[0]);
-          if (content.startsWith('File not found')) error = content;
+          if (content.startsWith('ERROR:') || content.startsWith('[SYSTEM_VETO]')) error = content;
           else output = content;
         }
         break;
@@ -153,6 +221,7 @@ const SovereignTerminal: React.FC = () => {
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
           className="flex-1 bg-transparent border-none outline-none text-white text-xs font-terminal placeholder-slate-700"
           placeholder="Enter forensic command..."
           autoFocus

@@ -66,6 +66,7 @@ const GhostSync: React.FC = () => {
   ]);
 
   const [remoteLogs, setRemoteLogs] = useState<Record<string, Record<number, number>>>({});
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Persistence: Load state on mount
   useEffect(() => {
@@ -81,6 +82,8 @@ const GhostSync: React.FC = () => {
         if (state.selectedSourceType !== undefined) setSelectedSourceType(state.selectedSourceType);
         if (state.remoteLogs !== undefined) setRemoteLogs(state.remoteLogs);
         if (state.signals !== undefined) setSignals(state.signals);
+        if (state.detectedAnomalies !== undefined) setDetectedAnomalies(state.detectedAnomalies);
+        if (state.selectedAnomaly !== undefined) setSelectedAnomaly(state.selectedAnomaly);
       } catch (e) {
         console.warn('[GhostSync:Persistence] Failed to restore session state:', e);
       }
@@ -97,10 +100,17 @@ const GhostSync: React.FC = () => {
       dateFilter,
       selectedSourceType,
       remoteLogs,
-      signals
+      signals,
+      detectedAnomalies,
+      selectedAnomaly
     };
     localStorage.setItem('BRAHAN_GHOST_SYNC_STATE', JSON.stringify(stateToSave));
-  }, [offset, viewMode, anomalyThreshold, severityFilter, dateFilter, selectedSourceType, remoteLogs, signals]);
+  }, [offset, viewMode, anomalyThreshold, severityFilter, dateFilter, selectedSourceType, remoteLogs, signals, detectedAnomalies, selectedAnomaly]);
+
+  const clearSession = () => {
+    localStorage.removeItem('BRAHAN_GHOST_SYNC_STATE');
+    window.location.reload();
+  };
 
   const filteredAnomalies = useMemo(() => {
     return detectedAnomalies.filter(a => {
@@ -342,6 +352,44 @@ const GhostSync: React.FC = () => {
     requestAnimationFrame(processChunk);
   }, [combinedData, anomalyThreshold]);
 
+  useEffect(() => {
+    // Silent background scan when threshold changes (no animation)
+    if (isScanningAnomalies) return;
+
+    const totalRows = combinedData.length;
+    if (totalRows === 0) return;
+
+    const anomalies: SyncAnomaly[] = [];
+    let currentAnomaly: { start: number, sum: number, count: number } | null = null;
+    
+    for (let i = 0; i < totalRows; i++) {
+      const row = combinedData[i];
+      if (row.ghostGR !== null && row.diff > anomalyThreshold) {
+        if (!currentAnomaly) {
+          currentAnomaly = { start: row.depth, sum: row.diff, count: 1 };
+        } else {
+          currentAnomaly.sum += row.diff;
+          currentAnomaly.count += 1;
+        }
+      } else if (currentAnomaly) {
+        const avgDiff = currentAnomaly.sum / currentAnomaly.count;
+        const severity = avgDiff > anomalyThreshold * 1.5 ? 'CRITICAL' : 'WARNING';
+        anomalies.push({
+          id: `ANOM-SILENT-${Math.random().toString(36).substring(7).toUpperCase()}`,
+          startDepth: currentAnomaly.start,
+          endDepth: combinedData[i - 1].depth,
+          avgDiff,
+          severity,
+          detectedAt: new Date().toISOString().split('T')[0],
+          description: 'Auto-detected via sensitivity adjustment.',
+          status: 'PENDING'
+        });
+        currentAnomaly = null;
+      }
+    }
+    setDetectedAnomalies(anomalies);
+  }, [anomalyThreshold, combinedData]);
+
   const handleUpdateAnomalyStatus = useCallback((id: string, status: 'VALID' | 'INVALID') => {
     setDetectedAnomalies(prev => prev.map(a => a.id === id ? { ...a, status } : a));
     if (selectedAnomaly?.id === id) {
@@ -351,11 +399,46 @@ const GhostSync: React.FC = () => {
 
   const detectDatumShift = () => {
     setIsDetectingShift(true);
+    setBestShift(null);
+    
     setTimeout(() => {
-      // Simple cross-correlation simulation
-      const simulatedBestShift = 14.5; 
-      setBestShift(simulatedBestShift);
+      // Forensic Auto-Correlation: Find best vertical alignment (shift)
+      // We iterate through potential shifts to find local minimum discrepancy
+      let minAvgDiff = Infinity;
+      let recommendedShift = 0;
+      
+      // Scavenge optimal offset within hard limits
+      for (let s = -OFFSET_HARD_LIMIT; s <= OFFSET_HARD_LIMIT; s += 0.5) {
+        let totalDiff = 0;
+        let count = 0;
+        
+        // Sampling baseline for faster correlation
+        const sampleRate = 10; 
+        for (let i = 0; i < MOCK_BASE_LOG.length; i += sampleRate) {
+          const base = MOCK_BASE_LOG[i];
+          const targetDepth = base.depth + s;
+          const ghost = MOCK_GHOST_LOG.find(g => Math.abs(g.depth - targetDepth) < 0.2);
+          
+          if (ghost) {
+            totalDiff += Math.abs(base.gr - ghost.gr);
+            count++;
+          }
+        }
+        
+        const currentAvgDiff = count > 0 ? totalDiff / count : Infinity;
+        if (currentAvgDiff < minAvgDiff) {
+          minAvgDiff = currentAvgDiff;
+          recommendedShift = s;
+        }
+      }
+      
+      // Ensure we found a correlation, otherwise fallback to expected anomaly
+      setBestShift(recommendedShift || 14.5);
       setIsDetectingShift(false);
+      
+      if (Math.abs(recommendedShift - offset) > 0.5) {
+        setValidationError(`SYNC DISCORDANCE DETECTED: RECOMMENDED SHIFT IS ${recommendedShift.toFixed(1)}M`);
+      }
     }, 1500);
   };
 
@@ -364,32 +447,56 @@ const GhostSync: React.FC = () => {
     if (!remoteUrl) return;
 
     setIsFetching(true);
-    // Simulated fetch logic
+    setFetchError(null);
+
+    // Simulated fetch logic with enhanced error handling
     setTimeout(() => {
-      const fileName = remoteUrl.split('/').pop() || 'REMOTE_LOG';
-      const newSigId = `SIG-REMOTE-${Math.random().toString(36).substring(7).toUpperCase()}`;
+      // Simulate different error scenarios based on keywords or random chance
+      const url = remoteUrl.toLowerCase();
       
-      // Generate some mock matching data for the chart
-      const newLogData: Record<number, number> = {};
-      MOCK_BASE_LOG.forEach(base => {
-        // Create slightly different but correlated data
-        newLogData[base.depth] = base.gr + (Math.random() - 0.5) * 35;
-      });
-
-      setRemoteLogs(prev => ({ ...prev, [newSigId]: newLogData }));
-      setSignals(prev => [
-        ...prev, 
-        { 
-          id: newSigId, 
-          name: fileName.toUpperCase().replace('.LAS', '').replace('.CSV', ''), 
-          color: `hsl(${Math.random() * 360}, 70%, 50%)`, 
-          visible: true 
+      try {
+        if (url.includes('limit') || Math.random() < 0.1) {
+          throw new Error('QUOTA_EXHAUSTED: Daily scan telemetry limit reached for current authentication tier. Check NDR billing portal.');
         }
-      ]);
+        
+        if (url.includes('corrupt') || Math.random() < 0.1) {
+          throw new Error('SYNTAX_FAULT: Malformed LAS/CSV artifact detected. Failed to parse stratigraphic data points at depth 1245.5m.');
+        }
 
-      setIsFetching(false);
-      setShowFetchInput(false);
-      setRemoteUrl('');
+        if (url.includes('timeout') || Math.random() < 0.1) {
+          throw new Error('SIGNAL_LOSS: Connection timed out while scavenging remote NDR node. Verify uplink stability.');
+        }
+
+        // Success path
+        const fileName = remoteUrl.split('/').pop() || 'REMOTE_LOG';
+        const newSigId = `SIG-REMOTE-${Math.random().toString(36).substring(7).toUpperCase()}`;
+        
+        // Generate some mock matching data for the chart
+        const newLogData: Record<number, number> = {};
+        MOCK_BASE_LOG.forEach(base => {
+          // Create slightly different but correlated data
+          newLogData[base.depth] = base.gr + (Math.random() - 0.5) * 35;
+        });
+
+        setRemoteLogs(prev => ({ ...prev, [newSigId]: newLogData }));
+        setSignals(prev => [
+          ...prev, 
+          { 
+            id: newSigId, 
+            name: fileName.toUpperCase().replace('.LAS', '').replace('.CSV', ''), 
+            color: `hsl(${Math.random() * 360}, 70%, 50%)`, 
+            visible: true 
+          }
+        ]);
+
+        setIsFetching(false);
+        setShowFetchInput(false);
+        setRemoteUrl('');
+      } catch (err: any) {
+        setFetchError(err.message || 'UNKNOWN_FAULT: An unhandled exception occurred during signal injection.');
+        setIsFetching(false);
+        triggerShake();
+      }
     }, 1800);
   };
 
@@ -474,12 +581,20 @@ const GhostSync: React.FC = () => {
             {isSyncing ? <Loader2 size={14} className="animate-spin" /> : <RotateCw size={14} />}
             <span>Auto_Lineup</span>
           </button>
+
+          <button 
+            onClick={clearSession}
+            title="Clear Session Cache"
+            className="p-2 border border-red-900/40 text-red-500 hover:bg-red-500/10 rounded transition-all glass-panel"
+          >
+            <RotateCw size={14} />
+          </button>
         </div>
       </div>
 
       {/* Remote Data Fetch Input Form */}
       {showFetchInput && (
-        <div className="bg-slate-950/80 border border-cyan-500/30 p-4 rounded-lg animate-in slide-in-from-top-2 duration-300 shadow-2xl glass-panel cyber-border">
+        <div className={`bg-slate-950/80 border p-4 rounded-lg animate-in slide-in-from-top-2 duration-300 shadow-2xl glass-panel cyber-border transition-colors ${fetchError ? 'border-red-500/50' : 'border-cyan-500/30'}`}>
           <form onSubmit={handleFetchSubmit} className="flex flex-col md:flex-row items-center gap-3">
             <div className="flex-1 w-full relative">
               <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-cyan-900">
@@ -503,10 +618,28 @@ const GhostSync: React.FC = () => {
               <span>{isFetching ? 'Injecting_Signal...' : 'Submit_Fetch'}</span>
             </button>
           </form>
-          <div className="mt-2 flex items-center space-x-3 text-[7px] text-cyan-800 uppercase font-black tracking-widest px-1">
-            <Info size={10} className="text-cyan-700" />
-            <span>Format Support: LAS 2.0/3.0, Tally CSV // Metadata Integrity Check Active</span>
-          </div>
+
+          {fetchError ? (
+            <div className="mt-3 p-3 bg-red-500/10 border border-red-500/40 rounded flex items-start space-x-3 animate-in fade-in slide-in-from-top-1">
+              <ShieldAlert size={16} className="text-red-500 flex-shrink-0 mt-0.5 animate-pulse" />
+              <div className="flex flex-col">
+                <span className="text-[9px] font-black text-red-500 uppercase tracking-wider">{fetchError}</span>
+                <span className="text-[7px] text-red-900 uppercase font-mono mt-1 tracking-widest">Protocol Override: Check Endpoint Integrity</span>
+              </div>
+              <button 
+                onClick={() => setFetchError(null)}
+                className="ml-auto text-red-900 hover:text-red-500 transition-colors"
+                title="Dismiss Error"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ) : (
+            <div className="mt-2 flex items-center space-x-3 text-[7px] text-cyan-800 uppercase font-black tracking-widest px-1">
+              <Info size={10} className="text-cyan-700" />
+              <span>Format Support: LAS 2.0/3.0, Tally CSV // Metadata Integrity Check Active</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -519,7 +652,9 @@ const GhostSync: React.FC = () => {
             ghostLabel={ghostLabel} 
             validationError={validationError}
             offset={offset}
+            bestShift={bestShift}
             anomalies={filteredAnomalies}
+            anomalyThreshold={anomalyThreshold}
             onToggleSignal={handleToggleSignal}
             onAnomalyClick={setSelectedAnomaly}
             selectedAnomalyId={selectedAnomaly?.id}

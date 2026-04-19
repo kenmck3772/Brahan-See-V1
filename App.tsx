@@ -36,6 +36,26 @@ const App: React.FC = () => {
     timeTravelSlider: false,
   });
 
+  // Session Persistence: Load modules on mount
+  useEffect(() => {
+    const saved = localStorage.getItem('WELL_TEGRA_ENGAGED_MODULES');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed === 'object' && parsed !== null) {
+          setEngagedModules(prev => ({ ...prev, ...parsed }));
+        }
+      } catch (e) {
+        console.warn('[App:Persistence] Failed to restore engaged modules:', e);
+      }
+    }
+  }, []);
+
+  // Session Persistence: Save modules on change
+  useEffect(() => {
+    localStorage.setItem('WELL_TEGRA_ENGAGED_MODULES', JSON.stringify(engagedModules));
+  }, [engagedModules]);
+
   useEffect(() => {
     const start = Date.now();
     const interval = setInterval(() => {
@@ -351,6 +371,15 @@ const App: React.FC = () => {
           100% { transform: translateY(100%); }
         }
         
+        @keyframes shimmer {
+          0% { transform: translateX(-100%); }
+          100% { transform: translateX(100%); }
+        }
+        
+        .animate-shimmer {
+          animation: shimmer 2s infinite;
+        }
+
         .scanline-effect {
           position: relative;
           overflow: hidden;
