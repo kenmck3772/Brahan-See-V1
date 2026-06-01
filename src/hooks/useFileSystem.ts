@@ -250,6 +250,41 @@ export const useFileSystem = () => {
     return null;
   }, [currentDir, items, touch]);
 
+  const cp = useCallback((sourceName: string, destName: string) => {
+    const sourceId = currentDir.children?.find(id => items[id].name === sourceName);
+    if (!sourceId) return `No such file or directory: ${sourceName}`;
+
+    const sourceItem = items[sourceId];
+    if (sourceItem.type === 'directory') {
+      return `ERROR: Copying directory nodes is not supported.`;
+    }
+
+    if (currentDir.children?.some(id => items[id].name === destName)) {
+      return `Item already exists: ${destName}`;
+    }
+
+    const id = `${currentDirId}/${destName}`;
+    const newItem: FSItem = {
+      id,
+      name: destName,
+      type: 'file',
+      content: sourceItem.content,
+      parentId: currentDirId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    setItems(prev => ({
+      ...prev,
+      [id]: newItem,
+      [currentDirId]: {
+        ...prev[currentDirId],
+        children: [...(prev[currentDirId].children || []), id]
+      }
+    }));
+    return null;
+  }, [currentDir, currentDirId, items]);
+
   return {
     pwd,
     ls,
@@ -258,6 +293,7 @@ export const useFileSystem = () => {
     touch,
     rm,
     mv,
+    cp,
     cat,
     write,
     currentPath: pwd()
