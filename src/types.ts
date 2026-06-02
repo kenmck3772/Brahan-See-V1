@@ -14,6 +14,7 @@ export interface DirectoryNode {
   anomalies?: string[];
   children?: DirectoryNode[];
   lastModified: string;
+  lastScanned?: string;
 }
 
 export interface ForensicLog {

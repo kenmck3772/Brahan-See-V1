@@ -7,7 +7,7 @@
 
 /* Custom Scanline Override & CRT Overlay effects */
 #crt-overlay {
-  background: radial-gradient(circle, rgba(16, 185, 129, 0.03) 0%, rgba(2, 6, 23, 0.4) 100%),
+  background: radial-gradient(circle, rgba(var(--crt-color-rgb, 16, 185, 129), 0.03) 0%, rgba(2, 6, 23, 0.4) 100%),
               linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%),
               linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
   background-size: 100% 100%, 100% 4px, 6px 100%;
@@ -18,7 +18,7 @@
   display: block;
   position: absolute;
   top: 0; left: 0; bottom: 0; right: 0;
-  background: linear-gradient(rgba(18, 16, 16, 0) 0%, rgba(16, 185, 129, 0.08) 10%, rgba(16, 185, 129, 0.15) 15%, rgba(16, 185, 129, 0.08) 20%, rgba(18, 16, 16, 0) 40%);
+  background: linear-gradient(rgba(18, 16, 16, 0) 0%, rgba(var(--crt-color-rgb, 16, 185, 129), 0.08) 10%, rgba(var(--crt-color-rgb, 16, 185, 129), 0.15) 15%, rgba(var(--crt-color-rgb, 16, 185, 129), 0.08) 20%, rgba(18, 16, 16, 0) 40%);
   opacity: 0.85;
   pointer-events: none;
   animation: scanline-move var(--scan-duration, 8s) linear infinite;
@@ -37,9 +37,43 @@
   }
 }
 
+:root {
+  --crt-color-rgb: 16, 185, 129;
+  --glow-color: rgba(16, 185, 129, 0.15);
+}
+
+.theme-crimson {
+  --crt-color-rgb: 239, 68, 68;
+  --glow-color: rgba(225, 29, 72, 0.18);
+
+  --color-emerald-50: #fff1f2;
+  --color-emerald-100: #ffe4e6;
+  --color-emerald-200: #fecdd3;
+  --color-emerald-300: #fda4af;
+  --color-emerald-400: #fb7185;
+  --color-emerald-500: #f43f5e;
+  --color-emerald-600: #e11d48;
+  --color-emerald-700: #be123c;
+  --color-emerald-800: #9f1239;
+  --color-emerald-900: #881337;
+  --color-emerald-950: #4c0519;
+
+  --color-cyan-50: #fef2f2;
+  --color-cyan-100: #fee2e2;
+  --color-cyan-200: #fecaca;
+  --color-cyan-300: #fca5a5;
+  --color-cyan-400: #f87171;
+  --color-cyan-500: #ef4444;
+  --color-cyan-600: #dc2626;
+  --color-cyan-700: #b91c1c;
+  --color-cyan-800: #991b1b;
+  --color-cyan-900: #7f1d1d;
+  --color-cyan-950: #450a0a;
+}
+
 /* Glass Panels with forensic emerald styling */
 .scanline-glow {
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.15);
+  box-shadow: 0 0 12px var(--glow-color, rgba(16, 185, 129, 0.15));
 }
 
 .glow-text-emerald {

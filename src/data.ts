@@ -25,6 +25,7 @@ export const initialFilesystem: DirectoryNode = {
               size: '4.2 KB',
               traumaRating: 64,
               lastModified: '2026-05-31',
+              lastScanned: '2026-05-31 09:15:00 UTC',
               anomalies: ['Pulsing depth shift detected (+4.2%)', 'Micro-fractures in structural integrity']
             },
             {
@@ -33,7 +34,8 @@ export const initialFilesystem: DirectoryNode = {
               type: 'file',
               size: '128 KB',
               traumaRating: 25,
-              lastModified: '2026-06-01'
+              lastModified: '2026-06-01',
+              lastScanned: '2026-06-02 11:30:22 UTC'
             }
           ]
         },
@@ -50,6 +52,7 @@ export const initialFilesystem: DirectoryNode = {
               size: '11.8 KB',
               traumaRating: 94,
               lastModified: '2026-06-01',
+              lastScanned: '2026-06-02 13:02:11 UTC',
               anomalies: ['CRITICAL STRESS COLLAPSE IMMINENT', 'Buffer overfill in sweep ring #2']
             },
             {
@@ -58,7 +61,8 @@ export const initialFilesystem: DirectoryNode = {
               type: 'file',
               size: '14 KB',
               traumaRating: 44,
-              lastModified: '2026-06-01'
+              lastModified: '2026-06-01',
+              lastScanned: '2026-05-25 08:00:00 UTC'
             }
           ]
         },
@@ -74,7 +78,8 @@ export const initialFilesystem: DirectoryNode = {
               type: 'file',
               size: '1.2 KB',
               traumaRating: 12,
-              lastModified: '2026-05-20'
+              lastModified: '2026-05-20',
+              lastScanned: '2026-06-02 14:00:15 UTC'
             }
           ]
         }
@@ -104,7 +109,8 @@ export const initialFilesystem: DirectoryNode = {
                   type: 'file',
                   size: '4.8 MB',
                   traumaRating: 5,
-                  lastModified: '2026-06-01'
+                  lastModified: '2026-06-01',
+                  lastScanned: '2026-06-01 10:20:00 UTC'
                 },
                 {
                   name: 'unauthorized_access.log',
@@ -113,6 +119,7 @@ export const initialFilesystem: DirectoryNode = {
                   size: '450 KB',
                   traumaRating: 88,
                   lastModified: '2026-06-01',
+                  lastScanned: '2026-06-02 13:58:00 UTC',
                   anomalies: ['Unscheduled admin bypass at 21:04 UTC', 'MD5 signature mismatch on auth gate']
                 }
               ]
@@ -129,7 +136,8 @@ export const initialFilesystem: DirectoryNode = {
                   type: 'file',
                   size: '14 KB',
                   traumaRating: 15,
-                  lastModified: '2026-05-29'
+                  lastModified: '2026-05-29',
+                  lastScanned: '2026-04-12 17:33:01 UTC'
                 }
               ]
             }
@@ -156,6 +164,7 @@ export const initialFilesystem: DirectoryNode = {
               size: '1.5 KB',
               traumaRating: 83,
               lastModified: '2026-06-01',
+              lastScanned: '2026-06-02 11:00:00 UTC',
               anomalies: ['Diagnostic telemetry indicates Logic Fault / Integrity Compromised']
             }
           ]
