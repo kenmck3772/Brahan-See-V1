@@ -1,8 +1,6 @@
 {
-  "name": "Copy of WellTegra - Brahan See",
-  "description": "A high-contrast cyber-forensic diagnostic engine for petrophysical wellbore analysis, identifying datum shifts, casing trauma, and annulus leaks.",
-  "requestFramePermissions": [
-    "camera",
-    "geolocation"
-  ]
+  "name": "Sovereign Terminal",
+  "description": "Sovereign Terminal forensics platform with custom TraumaNode 3D visualizers, drag-and-drop artifact ingestion, and directory bookmarks.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
