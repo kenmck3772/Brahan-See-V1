@@ -1,141 +1,17 @@
-
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Brahan Sovereign Console v.92</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500;600&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --emerald-primary: #22c55e;
-      --alert-red: #ef4444;
-      --sovereign-gold: #eab308;
-      --slate-abyssal: #0f172a;
-    }
-
-    body {
-      font-family: 'Inter', sans-serif;
-      background-color: var(--slate-abyssal);
-      color: #94a3b8;
-      margin: 0;
-      overflow: hidden;
-      height: 100vh;
-    }
-    
-    #root {
-      width: 100vw;
-      height: 100vh;
-      /* Screen Curvature Effect */
-      border-radius: 0.8rem; /* Subtle rounded corners */
-      box-shadow: inset 0 0 50px rgba(16, 185, 129, 0.1), inset 0 0 100px rgba(16, 185, 129, 0.05); /* Inner glow */
-      transform: perspective(1000px) rotateX(0.2deg) rotateY(-0.2deg) scale(0.999); /* Slight 3D skew and scale for convexity */
-      overflow: hidden; /* Ensure content stays within curved bounds */
-      filter: contrast(1.03) brightness(1.03); /* Slight CRT screen pop */
-      transition: transform 0.3s ease-out; /* Smooth transition for potential future interactions */
-    }
-
-    .font-terminal {
-      font-family: 'Fira Code', monospace;
-    }
-
-    ::-webkit-scrollbar {
-      width: 4px;
-    }
-    ::-webkit-scrollbar-track {
-      background: rgba(15, 23, 42, 0.5);
-    }
-    ::-webkit-scrollbar-thumb {
-      background: #334155;
-      border-radius: 4px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: var(--emerald-primary);
-    }
-
-    .animate-spin-slow {
-      animation: spin 60s linear infinite;
-    }
-    @keyframes spin {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-
-    /* CRT Scanline Overlay */
-    #crt-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      pointer-events: none;
-      z-index: 9999;
-      background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.15) 50%),
-                  linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
-      background-size: 100% 2px, 3px 100%;
-      opacity: 0.15;
-      animation: crt-flicker 0.1s infinite alternate;
-      will-change: opacity;
-    }
-
-    #crt-overlay::before {
-      content: " ";
-      display: block;
-      position: absolute;
-      top: 0;
-      left: 0;
-      bottom: 0;
-      right: 0;
-      background: radial-gradient(circle, rgba(18, 16, 16, 0) 40%, rgba(0, 0, 0, 0.4) 100%);
-      z-index: 10000;
-      pointer-events: none;
-    }
-
-    #crt-overlay::after {
-      content: "";
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: linear-gradient(rgba(18, 16, 16, 0) 0%, rgba(34, 197, 94, 0.03) 50%, rgba(18, 16, 16, 0) 100%);
-      background-size: 100% 20%;
-      animation: scanline-move 8s linear infinite;
-      will-change: transform;
-    }
-
-    @keyframes scanline-move {
-      0% { transform: translate3d(0, -100%, 0); }
-      100% { transform: translate3d(0, 100%, 0); }
-    }
-
-    @keyframes crt-flicker {
-      0% { opacity: 0.14; }
-      100% { opacity: 0.16; }
-    }
-  </style>
-<script type="importmap">
-{
-  "imports": {
-    "react/": "https://esm.sh/react@^19.2.3/",
-    "react": "https://esm.sh/react@^19.2.3",
-    "recharts": "https://esm.sh/recharts@^3.7.0",
-    "jspdf": "https://esm.sh/jspdf@^4.0.0",
-    "lucide-react": "https://esm.sh/lucide-react@^0.563.0",
-    "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
-    "@playwright/test": "https://esm.sh/@playwright/test@^1.58.0",
-    "plotly.js-dist-min": "https://esm.sh/plotly.js-dist-min@^3.3.1"
-  }
-}
-</script>
-</head>
-<body>
-  <div id="root"></div>
-  <div id="crt-overlay"></div>
-  <script type="module" src="/index.tsx"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2310b981' stroke-width='2'%3E%3Cpolyline points='4 17 10 11 13 14 20 7'/%3E%3Cpolyline points='14 7 20 7 20 13'/%3E%3C/svg%3E" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Brahan Sovereign Terminal</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body class="bg-[#020617] text-white overflow-hidden select-none">
+    <div id="root" class="h-screen w-screen flex flex-col"></div>
+    <div id="crt-overlay" class="pointer-events-none fixed inset-0 z-50"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>
