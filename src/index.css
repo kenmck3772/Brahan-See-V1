@@ -93,9 +93,31 @@
   background: rgba(2, 6, 23, 0.5);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(16, 185, 129, 0.2);
+  background: rgba(var(--crt-color-rgb, 16, 185, 129), 0.25);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(16, 185, 129, 0.4);
+  background: rgba(var(--crt-color-rgb, 16, 185, 129), 0.45);
 }
+
+/* Dynamic border & accent styling driven by real-time Theme Synchronization Service */
+.sync-border-color {
+  border-color: rgba(var(--crt-color-rgb, 16, 185, 129), 0.2);
+  transition: border-color 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sync-border-color:hover {
+  border-color: rgba(var(--crt-color-rgb, 16, 185, 129), 0.4);
+}
+.sync-text-color {
+  color: rgb(var(--crt-color-rgb, 16, 185, 129));
+  transition: color 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sync-bg-glow {
+  background-color: rgba(var(--crt-color-rgb, 16, 185, 129), 0.06);
+  transition: background-color 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.sync-text-glow {
+  text-shadow: 0 0 6px rgba(var(--crt-color-rgb, 16, 185, 129), 0.6);
+  transition: text-shadow 300ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+

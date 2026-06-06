@@ -35,3 +35,18 @@ export interface IngestedArtifact {
   detectedThreats: string[];
   ingestTime: string;
 }
+
+export interface WorkspaceSnapshot {
+  id: string;
+  name: string;
+  timestamp: string;
+  selectedFilePath: string | null;
+  nodeViewMode: 'tree' | 'trauma';
+  terminalTheme: 'emerald' | 'crimson';
+  rightPanelWeight: number;
+  expandedPaths: string[];
+  isLeakScannerEnabled?: boolean;
+  leakPressureThreshold?: number;
+  leakTempDropThreshold?: number;
+}
+

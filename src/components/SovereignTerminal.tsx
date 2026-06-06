@@ -1,10 +1,14 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { initialFilesystem, defaultBookmarks } from '../data';
-import { Bookmark, DirectoryNode, ForensicLog, IngestedArtifact } from '../types';
+import { Bookmark, DirectoryNode, ForensicLog, IngestedArtifact, WorkspaceSnapshot } from '../types';
 import { BookmarkManager } from './BookmarkManager';
+import { WorkspaceSnapshotManager } from './WorkspaceSnapshotManager';
+import { DiagnosticSessionSidebar } from './DiagnosticSessionSidebar';
 import { TraumaNodeVisualizer } from './TraumaNodeVisualizer';
 import { ForensicHeatmap } from './ForensicHeatmap';
+import { TelemetryPanel } from './TelemetryPanel';
+import { CasingTraumaVisualizer } from './CasingTraumaVisualizer';
 import { ArtifactIngestion } from './ArtifactIngestion';
 import { WellTegraLogo } from './WellTegraLogo';
 import { 
@@ -50,6 +54,7 @@ import {
   Tooltip,
   Cell
 } from 'recharts';
+import { exportForensicPDFReport } from '../utils/pdfGenerator';
 
 const getAnomalyThreatDetails = (anomaly: string) => {
   const text = anomaly.toUpperCase();
@@ -869,6 +874,216 @@ export const SovereignTerminal: React.FC = () => {
     }
   }, [terminalTheme]);
 
+  // ===================================================================================
+  // Unified Theme and Diagnostic Profile Synchronization Service
+  // Dynamically updates telemetry line charts, grid intensity, and CSS variables across the terminal
+  // ===================================================================================
+  useEffect(() => {
+    const root = document.documentElement;
+    const severity = selectedFile 
+      ? (selectedFile.traumaRating ?? 0) > 70 
+        ? 'severe' 
+        : (selectedFile.traumaRating ?? 0) > 30 
+          ? 'warning' 
+          : 'nominal'
+      : 'nominal';
+
+    let primaryColorRgb = '16, 185, 129'; // emerald rgb
+    let primaryColorHex = '#10b981';
+    let chartLineHex = '#34d399';
+    let gridStrokeColor = 'rgba(16, 185, 129, 0.06)';
+    let gridOpacity = '0.06';
+    let crtColorRgb = '16, 185, 129';
+    let glowColorStr = 'rgba(16, 185, 129, 0.15)';
+    let gridIntensityMode = 'NOMINAL_GREEN_GRID';
+
+    // 1. Base theme mapping (e.g., standard green vs. high-severity crimson)
+    if (terminalTheme === 'crimson') {
+      primaryColorRgb = '239, 68, 68'; // crimson rgb
+      primaryColorHex = '#f43f5e';
+      chartLineHex = '#f87171';
+      gridStrokeColor = 'rgba(248, 113, 113, 0.08)';
+      gridOpacity = '0.08';
+      crtColorRgb = '239, 68, 68';
+      glowColorStr = 'rgba(225, 29, 72, 0.18)';
+      gridIntensityMode = 'NOMINAL_CRIMSON_GRID';
+    }
+
+    // 2. Override based on selected Diagnostic Anomaly Severity Profile
+    if (severity === 'severe') {
+      primaryColorRgb = '220, 38, 38'; // red-600
+      primaryColorHex = '#dc2626';
+      chartLineHex = '#dc2626';
+      gridStrokeColor = 'rgba(239, 68, 68, 0.28)';
+      gridOpacity = '0.28';
+      crtColorRgb = '220, 38, 38';
+      glowColorStr = 'rgba(239, 68, 68, 0.28)';
+      gridIntensityMode = 'HIGH_ALERT_CRIMSON_CRITICAL';
+    } else if (severity === 'warning') {
+      primaryColorRgb = '245, 158, 11'; // amber-500
+      primaryColorHex = '#f59e0b';
+      chartLineHex = '#f59e0b';
+      gridStrokeColor = 'rgba(245, 158, 11, 0.16)';
+      gridOpacity = '0.16';
+      crtColorRgb = '245, 158, 11';
+      glowColorStr = 'rgba(245, 158, 11, 0.20)';
+      gridIntensityMode = 'ALERT_AMBER_WARNING';
+    }
+
+    // 3. Set global CSS custom attributes directly to root style
+    root.style.setProperty('--crt-color-rgb', crtColorRgb);
+    root.style.setProperty('--glow-color', glowColorStr);
+    root.style.setProperty('--theme-primary-rgb', primaryColorRgb);
+    root.style.setProperty('--theme-primary-hex', primaryColorHex);
+    root.style.setProperty('--theme-chart-line-hex', chartLineHex);
+    root.style.setProperty('--theme-grid-stroke', gridStrokeColor);
+    root.style.setProperty('--theme-grid-opacity', gridOpacity);
+    root.style.setProperty('--theme-grid-intensity-mode', gridIntensityMode);
+
+    // Toggle global CSS theme-crimson class on html element for unified tailwind color override propagation
+    root.classList.toggle('theme-crimson', terminalTheme === 'crimson');
+
+    addLog(`[THEME SYNCHRONIZER] Alignment complete: Grid density Mode="${gridIntensityMode}" (Alpha=${gridOpacity}), Waveform Color: [${chartLineHex}]. CSS custom variables updated.`, severity === 'severe' ? 'error' : severity === 'warning' ? 'warning' : 'success');
+  }, [terminalTheme, selectedFile?.path, selectedFile?.traumaRating]);
+
+  // Workspace Snapshots Persistence and State Provider
+  const [snapshots, setSnapshots] = useState<WorkspaceSnapshot[]>(() => {
+    try {
+      const stored = localStorage.getItem('sovereign_terminal_workspace_snapshots');
+      return stored ? JSON.parse(stored) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('sovereign_terminal_workspace_snapshots', JSON.stringify(snapshots));
+    } catch (e) {
+      console.error('Failed to save snapshots to localStorage', e);
+    }
+  }, [snapshots]);
+
+  const [isSessionSidebarOpen, setIsSessionSidebarOpen] = useState(false);
+
+  const handleLoadFileByPath = (pathStr: string) => {
+    const findNodeByPath = (node: DirectoryNode, targetPath: string): DirectoryNode | null => {
+      if (node.path === targetPath) return node;
+      if (node.children) {
+        for (const child of node.children) {
+          const found = findNodeByPath(child, targetPath);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+
+    const targetNode = findNodeByPath(initialFilesystem, pathStr);
+    if (targetNode) {
+      setSelectedFile(targetNode);
+      const parentParts = pathStr.split('/');
+      parentParts.pop();
+      const parentPath = parentParts.join('/') || '/';
+      setCurrentPath(parentPath);
+    } else {
+      setSelectedFile({
+        name: pathStr.split('/').pop() || 'Untitled File',
+        path: pathStr,
+        type: 'file',
+        lastModified: new Date().toISOString().replace('T', ' ').slice(0, 10),
+        traumaRating: 0
+      });
+    }
+  };
+
+  const handleSaveSnapshot = (name: string) => {
+    const formattedToday = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+    const activeTelemetry = (window as any).wellTegraTelemetryReportData;
+
+    const newSnap: WorkspaceSnapshot = {
+      id: `snap-${Date.now()}`,
+      name,
+      timestamp: formattedToday,
+      selectedFilePath: selectedFile ? selectedFile.path : null,
+      nodeViewMode,
+      terminalTheme,
+      rightPanelWeight,
+      expandedPaths,
+      isLeakScannerEnabled: activeTelemetry?.isLeakScannerEnabled,
+      leakPressureThreshold: activeTelemetry?.leakPressureThreshold,
+      leakTempDropThreshold: activeTelemetry?.leakTempDropThreshold
+    };
+
+    setSnapshots(prev => [...prev, newSnap]);
+    addLog(`Captured workspace snapshot record: [${name}]`, 'success');
+  };
+
+  const handleLoadSnapshot = (snap: WorkspaceSnapshot) => {
+    // 1. Theme Configuration
+    setTerminalTheme(snap.terminalTheme);
+
+    // 2. Main View Mode (Tree/Trauma)
+    setNodeViewMode(snap.nodeViewMode);
+
+    // 3. Folder Expansion Structure
+    setExpandedPaths(snap.expandedPaths);
+
+    // 4. Panel Layout Weights
+    setRightPanelWeight(snap.rightPanelWeight);
+
+    // 5. Restore Currently Selected File reference
+    if (snap.selectedFilePath) {
+      const findNodeByPath = (node: DirectoryNode, pathStr: string): DirectoryNode | null => {
+        if (node.path === pathStr) return node;
+        if (node.children) {
+          for (const child of node.children) {
+            const found = findNodeByPath(child, pathStr);
+            if (found) return found;
+          }
+        }
+        return null;
+      };
+
+      const targetNode = findNodeByPath(initialFilesystem, snap.selectedFilePath);
+      if (targetNode) {
+        setSelectedFile(targetNode);
+      } else {
+        setSelectedFile({
+          name: snap.selectedFilePath.split('/').pop() || 'Untitled File',
+          path: snap.selectedFilePath,
+          type: 'file',
+          lastModified: new Date().toISOString().replace('T', ' ').slice(0, 10),
+          traumaRating: 0
+        });
+      }
+    } else {
+      setSelectedFile(null);
+    }
+
+    // 6. Support for restoring background leak configurations if exists
+    if (snap.isLeakScannerEnabled !== undefined && (window as any).wellTegraTelemetryReportData) {
+      (window as any).wellTegraTelemetryReportData.isLeakScannerEnabled = snap.isLeakScannerEnabled;
+      if (snap.leakPressureThreshold !== undefined) {
+        (window as any).wellTegraTelemetryReportData.leakPressureThreshold = snap.leakPressureThreshold;
+      }
+      if (snap.leakTempDropThreshold !== undefined) {
+        (window as any).wellTegraTelemetryReportData.leakTempDropThreshold = snap.leakTempDropThreshold;
+      }
+    }
+
+    addLog(`Operator command: restored saved workspace state [${snap.name}]`, 'success');
+  };
+
+  const handleRemoveSnapshot = (id: string) => {
+    setSnapshots(prev => {
+      const target = prev.find(s => s.id === id);
+      if (target) {
+        addLog(`Purged workspace snapshot: [${target.name}]`, 'warning');
+      }
+      return prev.filter(s => s.id !== id);
+    });
+  };
+
   const maxTraumaRating = useMemo(() => {
     let max = 0;
     const traverse = (node: DirectoryNode) => {
@@ -1237,6 +1452,7 @@ export const SovereignTerminal: React.FC = () => {
   const [autoScroll, setAutoScroll] = useState(true);
   const [activeAlert, setActiveAlert] = useState(false);
   const [logFilter, setLogFilter] = useState<string>('all');
+  const [logSearchQuery, setLogSearchQuery] = useState<string>('');
   const [showClearConfirmation, setShowClearConfirmation] = useState(false);
   const [hoveredArtifact, setHoveredArtifact] = useState<IngestedArtifact | null>(null);
   const [artifactTooltipCoords, setArtifactTooltipCoords] = useState<{ x: number; y: number } | null>(null);
@@ -1273,9 +1489,31 @@ export const SovereignTerminal: React.FC = () => {
   const prevLogsLengthRef = useRef(3); // Start with initial 3 logs
 
   const filteredLogs = useMemo(() => {
-    if (logFilter === 'all') return forensicLogs;
-    return forensicLogs.filter(log => log.type === logFilter);
-  }, [forensicLogs, logFilter]);
+    let logs = forensicLogs;
+    if (logFilter !== 'all') {
+      logs = logs.filter(log => log.type === logFilter);
+    }
+    if (logSearchQuery.trim()) {
+      const q = logSearchQuery.toLowerCase().trim();
+      logs = logs.filter(log => {
+        const msgMatch = log.message.toLowerCase().includes(q);
+        const timeMatch = log.timestamp.toLowerCase().includes(q);
+        const typeMatch = log.type.toLowerCase().includes(q);
+        
+        // Check for bracket-enclosed categorical tags (e.g. "[FOCUS SYSTEM]", "[TELEMETRY]")
+        const bracketTags: string[] = [];
+        const bracketRegex = /\[([^\]]+)\]/g;
+        let match;
+        while ((match = bracketRegex.exec(log.message)) !== null) {
+          bracketTags.push(match[1].toLowerCase());
+        }
+        const tagMatch = bracketTags.some(tag => tag.includes(q));
+
+        return msgMatch || timeMatch || typeMatch || tagMatch;
+      });
+    }
+    return logs;
+  }, [forensicLogs, logFilter, logSearchQuery]);
 
   // Max peak log volume within history for sparkline normalization mapping
   const maxVolume = useMemo(() => {
@@ -1557,11 +1795,70 @@ export const SovereignTerminal: React.FC = () => {
   const addLog = (message: string, type: 'info' | 'warning' | 'error' | 'success') => {
     const d = new Date();
     const ts = d.toISOString().slice(11, 19) + ' UTC';
+    const uniqueId = `log-${Date.now()}-${Math.floor(Math.random() * 10000000)}`;
     setForensicLogs(prev => [
       ...prev,
-      { id: 'log-' + Math.floor(Math.random() * 10000), timestamp: ts, message, type }
+      { id: uniqueId, timestamp: ts, message, type }
     ]);
   };
+
+  // 3.5 Global Keyboard Shortcut Controls Listener for Navigation Efficiency
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape -> Clear Active Selections and blurs active inputs
+      if (e.key === 'Escape' || e.key === 'Esc') {
+        setSelectedFile(null);
+        setShowCombinedAuditModal(false);
+        setShowClearConfirmation(false);
+        if (document.activeElement instanceof HTMLElement) {
+          document.activeElement.blur();
+        }
+        addLog("[NAVIGATION] Keyboard directive 'ESC' registered. Resetting active element focus & active inspection panels.", 'info');
+      }
+
+      // Ctrl + T (or Cmd + T on macOS) -> Telemetry Panel auto-focus / smooth scroll
+      if ((e.ctrlKey || e.metaKey) && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        const telemetryEl = document.getElementById('telemetry-panel');
+        if (telemetryEl) {
+          telemetryEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          telemetryEl.classList.add('ring-2', 'ring-cyan-400', 'shadow-[0_0_25px_rgba(6,182,212,0.45)]');
+          addLog("[NAVIGATION] Keyboard hotkey 'Ctrl+T' registered. Rolling viewport refocus to Telemetry Monitoring Panel.", 'success');
+          setTimeout(() => {
+            telemetryEl.classList.remove('ring-2', 'ring-cyan-400', 'shadow-[0_0_25px_rgba(6,182,212,0.45)]');
+          }, 1500);
+        }
+      }
+
+      // Ctrl + F (or Cmd + F on macOS) -> Forensic Log Terminal auto-focus / search activation
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        const loggerEl = document.getElementById('black-box-forensic-logger');
+        if (loggerEl) {
+          loggerEl.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          loggerEl.classList.add('ring-2', 'ring-emerald-400', 'shadow-[0_0_25px_rgba(16,185,129,0.45)]');
+          addLog("[NAVIGATION] Keyboard hotkey 'Ctrl+F' registered. Anchored viewport focus to Black Box Forensic Log stream.", 'success');
+          
+          const searchInput = document.getElementById('forensic-log-search');
+          if (searchInput) {
+            searchInput.focus();
+            if (searchInput instanceof HTMLInputElement) {
+              searchInput.select();
+            }
+          }
+          
+          setTimeout(() => {
+            loggerEl.classList.remove('ring-2', 'ring-emerald-400', 'shadow-[0_0_25px_rgba(16,185,129,0.45)]');
+          }, 1500);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [setSelectedFile, setShowCombinedAuditModal, setShowClearConfirmation]);
 
   // Auto-Scan interval simulation
   useEffect(() => {
@@ -2758,6 +3055,34 @@ export const SovereignTerminal: React.FC = () => {
             )}
           </div>
 
+          {/* Generate PDF Forensic Report Button */}
+          <button
+            type="button"
+            onClick={() => {
+              try {
+                exportForensicPDFReport({
+                  terminalTheme,
+                  maxTraumaRating,
+                  forensicLogs,
+                  operatorEmail: 'kmck3772@gmail.com'
+                });
+                addLog('Sovereign Terminal compiling assets... PDF Forensic Report downloaded successfully.', 'success');
+              } catch (err: any) {
+                console.error(err);
+                addLog(`Failed to compile forensic report PDF: ${err.message || err}`, 'error');
+              }
+            }}
+            className={`flex items-center gap-1.5 border px-2.5 py-1 rounded text-xs font-bold transition-all cursor-pointer ${
+              terminalTheme === 'crimson'
+                ? 'border-red-500/30 hover:border-red-500/60 bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 shadow-[0_0_10px_rgba(239,68,68,0.1)]'
+                : 'border-emerald-500/30 hover:border-emerald-500/60 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.1)]'
+            }`}
+            title="Compile all active telemetry datasets, anomaly maps, and 3D heatmaps into a PDF forensic audit document."
+          >
+            <Download className={`w-3.5 h-3.5 ${terminalTheme === 'crimson' ? 'text-red-400' : 'text-emerald-400'}`} />
+            <span className="tracking-wide uppercase text-[10px]">Generate PDF Report</span>
+          </button>
+
           <div className="flex items-center gap-1.5 border border-emerald-500/20 px-2.5 py-1 rounded bg-black/60">
             <Clock className="w-4 h-4 text-emerald-400 animate-pulse" />
             <span className="text-white text-xs font-bold glow-text-emerald tabular-nums">
@@ -2787,11 +3112,49 @@ export const SovereignTerminal: React.FC = () => {
         </div>
       </header>
 
-      {/* 2. Primary Split Grid Layout */}
-      <div 
-        className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 overflow-hidden mb-3"
-        style={isLgScreen ? { gridTemplateColumns: `3fr ${9 - rightPanelWeight}fr ${rightPanelWeight}fr` } : undefined}
-      >
+      {/* Dynamic Hotkey / Shortcuts Quick-Access Command Bar indicator */}
+      <div className="flex flex-wrap items-center justify-between px-3 py-2 mb-3 border border-emerald-500/10 rounded-md bg-[#020617]/50 text-[9.5px] font-mono select-none text-zinc-500 animate-fade-in shadow-[inset_0_0_10px_rgba(16,185,129,0.02)]">
+        <div className="flex items-center gap-1.5">
+          <Terminal className="w-3 h-3 text-emerald-500/60 animate-pulse" />
+          <span className="text-emerald-500/60 font-bold uppercase tracking-wider text-[8.5px]">COMMAND HUD KEYBOARD SHORTCUTS:</span>
+        </div>
+        <div className="flex items-center gap-4 flex-wrap text-zinc-400">
+          <span className="flex items-center gap-1.5 h-full">
+            <kbd className="bg-zinc-950 text-emerald-400 px-1 py-0.5 rounded border border-emerald-500/20 shadow-[0_0_5px_rgba(16,185,129,0.05)] font-bold">Esc</kbd>
+            <span className="text-zinc-500 font-bold hover:text-zinc-400 transition-colors uppercase tracking-[0.02em] text-[8px]">Clear Inspections & Focus</span>
+          </span>
+          <span className="text-zinc-800 font-black">/</span>
+          <span className="flex items-center gap-1.5">
+            <kbd className="bg-zinc-950 text-cyan-400 px-1 py-0.5 rounded border border-cyan-500/20 shadow-[0_0_5px_rgba(6,182,212,0.05)] font-bold">Ctrl + T</kbd>
+            <span className="text-zinc-500 font-bold hover:text-zinc-400 transition-colors uppercase tracking-[0.02em] text-[8px]">Telemetry Panel</span>
+          </span>
+          <span className="text-zinc-800 font-black">/</span>
+          <span className="flex items-center gap-1.5">
+            <kbd className="bg-zinc-950 text-emerald-400 px-1 py-0.5 rounded border border-emerald-500/20 shadow-[0_0_5px_rgba(16,185,129,0.05)] font-bold">Ctrl + F</kbd>
+            <span className="text-zinc-500 font-bold hover:text-zinc-400 transition-colors uppercase tracking-[0.02em] text-[8px]">Forensic Log (Search)</span>
+          </span>
+        </div>
+      </div>
+
+      {/* Container wrapping DiagnosticSessionSidebar and main split grid side-by-side */}
+      <div className="flex-1 flex overflow-hidden gap-3 w-full pr-1">
+        {/* Diagnostic Session Sidebar */}
+        <DiagnosticSessionSidebar
+          terminalTheme={terminalTheme}
+          isOpen={isSessionSidebarOpen}
+          onToggle={() => setIsSessionSidebarOpen(prev => !prev)}
+          selectedFile={selectedFile}
+          onLoadFileByPath={handleLoadFileByPath}
+          onSetTheme={setTerminalTheme}
+          onSetViewMode={setNodeViewMode}
+          addLog={addLog}
+        />
+
+        {/* 2. Primary Split Grid Layout */}
+        <div 
+          className="flex-1 grid grid-cols-1 lg:grid-cols-3 gap-4 overflow-hidden mb-3"
+          style={isLgScreen ? { gridTemplateColumns: `3fr ${9 - rightPanelWeight}fr ${rightPanelWeight}fr` } : undefined}
+        >
         {/* Left Side: System managers & Upload Ingestion (Col span 1) */}
         <div className="lg:col-span-1 flex flex-col gap-4 overflow-y-auto pr-1">
           {/* Quick bookmarks */}
@@ -2802,6 +3165,17 @@ export const SovereignTerminal: React.FC = () => {
             onRemoveBookmark={handleRemoveBookmark}
             onNavigate={handleNavigate}
             addLog={addLog}
+          />
+
+          {/* Workspace Snapshots Recovery */}
+          <WorkspaceSnapshotManager
+            terminalTheme={terminalTheme}
+            snapshots={snapshots}
+            onSaveSnapshot={handleSaveSnapshot}
+            onLoadSnapshot={handleLoadSnapshot}
+            onRemoveSnapshot={handleRemoveSnapshot}
+            addLog={addLog}
+            currentSelectedFilePath={selectedFile ? selectedFile.path : null}
           />
 
           {/* Ingest Integrity Monitor */}
@@ -4226,11 +4600,23 @@ export const SovereignTerminal: React.FC = () => {
             maxTraumaRating={maxTraumaRating}
             addLog={addLog}
           />
+          <TelemetryPanel
+            terminalTheme={terminalTheme}
+            addLog={addLog}
+            selectedFile={selectedFile}
+          />
+          <CasingTraumaVisualizer
+            terminalTheme={terminalTheme}
+            initialFilesystem={initialFilesystem}
+            filesystemUpdateTrigger={filesystemUpdateTrigger}
+            addLog={addLog}
+            forensicLogs={forensicLogs}
+          />
         </div>
       </div>
 
       {/* 3. Bottom Black Box Forensic Logger */}
-      <footer className="h-44 border border-emerald-500/20 bg-[#020617]/95 rounded p-3 bg-black/80 flex flex-col overflow-hidden scanline-glow flex-shrink-0 select-text relative z-10">
+      <footer id="black-box-forensic-logger" className="h-44 border border-emerald-500/20 bg-[#020617]/95 rounded p-3 bg-black/80 flex flex-col overflow-hidden scanline-glow flex-shrink-0 select-text relative z-10 transition-all duration-300">
         <div className="flex items-center justify-between border-b border-emerald-500/15 pb-1.5 flex-shrink-0 mb-1.5 gap-2">
           <div className="flex items-center gap-3">
             <span className="font-mono text-xs font-bold text-emerald-400 glow-text-emerald flex items-center gap-1.5">
@@ -4339,8 +4725,32 @@ export const SovereignTerminal: React.FC = () => {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+            {/* Real-time Query Filter Engine */}
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-emerald-500/20 bg-emerald-950/20 text-[9px] font-mono text-emerald-400 w-28 sm:w-36 md:w-48 overflow-hidden transition-all duration-150">
+              <Search className="w-3 h-3 text-emerald-500/50 flex-shrink-0" />
+              <input
+                id="forensic-log-search"
+                type="text"
+                placeholder="SEARCH ENGINE..."
+                value={logSearchQuery}
+                onChange={(e) => setLogSearchQuery(e.target.value)}
+                className="bg-transparent text-emerald-300 font-bold outline-none border-none p-0 focus:ring-0 text-[9px] h-3.5 w-full placeholder:text-emerald-500/20 uppercase"
+              />
+              {logSearchQuery && (
+                <button
+                  id="reset-forensic-search"
+                  type="button"
+                  onClick={() => setLogSearchQuery('')}
+                  className="text-emerald-500/70 hover:text-emerald-300 cursor-pointer flex-shrink-0 ml-1"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
+            </div>
+
             <button
+              id="toggle-timestamps-btn"
               type="button"
               onClick={() => setShowTimestamps(!showTimestamps)}
               className="flex items-center gap-1 px-2 py-0.5 rounded border border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 text-[9px] font-mono text-emerald-400 hover:text-emerald-300 transition-all cursor-pointer"
@@ -4468,6 +4878,7 @@ export const SovereignTerminal: React.FC = () => {
           )}
         </div>
       </footer>
+      </div>
 
       {/* Confirmation Modal for Clearing Black Box logs */}
       {showClearConfirmation && (
@@ -5449,17 +5860,17 @@ export const SovereignTerminal: React.FC = () => {
                           <span className="text-cyan-400">Baseline History ({snapshot.traumaRating}%)</span>
                         </span>
                         <span className="flex items-center gap-1">
-                          <span className="w-2.5 h-0.5 bg-emerald-400" />
-                          <span className="text-emerald-400">Present History ({selectedFile.traumaRating}%)</span>
+                          <span className="w-2.5 h-0.5" style={{ backgroundColor: 'var(--theme-chart-line-hex, #34d399)' }} />
+                          <span className="font-semibold" style={{ color: 'var(--theme-chart-line-hex, #34d399)' }}>Present History ({selectedFile.traumaRating}%)</span>
                         </span>
                       </div>
 
                       <div className="w-full h-full pt-6 relative px-8 flex-grow">
                         <svg className="w-full h-full" viewBox="0 0 400 60" preserveAspectRatio="none">
                           {/* Gridline bounds */}
-                          <line x1="0" y1="0" x2="400" y2="0" stroke="rgba(16,185,129,0.06)" strokeDasharray="2" />
-                          <line x1="0" y1="30" x2="400" y2="30" stroke="rgba(16,185,129,0.06)" strokeDasharray="2" />
-                          <line x1="0" y1="60" x2="400" y2="60" stroke="rgba(16,185,129,0.08)" />
+                          <line x1="0" y1="0" x2="400" y2="0" stroke="var(--theme-grid-stroke, rgba(16,185,129,0.06))" strokeDasharray="1 2" />
+                          <line x1="0" y1="30" x2="400" y2="30" stroke="var(--theme-grid-stroke, rgba(16,185,129,0.06))" strokeDasharray="1 2" />
+                          <line x1="0" y1="60" x2="400" y2="60" stroke="var(--theme-grid-stroke, rgba(16,185,129,0.08))" />
 
                           {/* Snap History path */}
                           {(() => {
@@ -5491,9 +5902,10 @@ export const SovereignTerminal: React.FC = () => {
                               <path 
                                 d={presPathStr} 
                                 fill="none" 
-                                stroke={(selectedFile.traumaRating || 0) > 70 ? '#f87171' : '#34d399'} 
-                                strokeWidth="2" 
-                                className="drop-shadow-[0_0_4px_rgba(52,211,153,0.3)] animate-pulse"
+                                stroke="var(--theme-chart-line-hex, #34d399)" 
+                                strokeWidth="2.2" 
+                                className="animate-pulse"
+                                style={{ filter: 'drop-shadow(0 0 4px var(--theme-chart-line-hex, rgba(52,211,153,0.3)))' }}
                               />
                             );
                           })()}
